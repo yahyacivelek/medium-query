@@ -4,7 +4,7 @@ import time
 import click
 
 @click.command()
-@click.option('-q', '--query', default='python', help='Output file path.')
+@click.option('-q', '--query', required=True, help='query input')
 @click.option('-o', '--output', default='data.json', help='Output file path.')
 def query_medium(query, output):
   headers = {
