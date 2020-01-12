@@ -3,10 +3,18 @@ import json
 import time
 import click
 
+def chunks(lst, n):
+    for i in range(0, len(lst), n):
+        yield len(lst[i:i + n])
+
+def generate_loop_index_list(start, stop, step=1):
+  return list(chunks(range(start, stop), step))
+
 @click.command()
 @click.option('-q', '--query', required=True, help='query input')
-@click.option('-o', '--output', default='data.json', help='Output file path.')
-def query_medium(query, output):
+@click.option('-n', '--maxnum', default=9999, help='max. number of results. [10 - 9999)')
+@click.option('-o', '--output', default="results.json", help='Maximum number of results. Default: No restriction.')
+def query_medium(query, maxnum, output):
   headers = {
       'authority': 'medium.com',
       'pragma': 'no-cache',
@@ -30,14 +38,15 @@ def query_medium(query, output):
       ('q', query),
   )
   offset = len(b'])}while(1);</x>')
-  data = '{"page":1,"pageSize":10}'
+  result_size = 10 if maxnum >= 10 else maxnum
+  data = json.dumps({"page": 1, "pageSize": result_size})
   article_list = []
   Users = {}
   Collections = {}
   article_num = 0
+  loop_index_list = generate_loop_index_list(0, maxnum, 10)
   tic = time.time()
-  #while True:
-  for _ in range(5):
+  for result_size in loop_index_list:
       response = requests.post('https://medium.com/search/posts', headers=headers, params=params, data=data)
       if response.status_code != 200:
           print("Not successfull: ", response)
@@ -56,11 +65,12 @@ def query_medium(query, output):
       if paging:
           next_page = paging.get("next", None)
           if not next_page:
-              print("No 'next' element")
+              print("No 'next' element. End of queries!")
               break
       else:
           print("No 'paging' element")
           break
+      next_page['pageSize'] = result_size
       data = json.dumps(next_page)
       #break
       
