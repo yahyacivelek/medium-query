@@ -139,7 +139,13 @@ def collect_archive(tag, output):
         url = "/".join([base_url, year])
         print("url: ", url)
         response = requests.get(url, headers=headers)
-        res_dict = json.loads(response.text[offset:])
+        if response.status_code != 200:
+          print("Not successfull: ", response)
+          continue
+        try:
+            res_dict = json.loads(response.text[offset:])
+        except:
+            continue
         monthlyBuckets = res_dict["payload"]["archiveIndex"]["monthlyBuckets"]
         if not monthlyBuckets:
             update_data(res_dict)
@@ -148,7 +154,13 @@ def collect_archive(tag, output):
             month = mb["month"]
             url = "/".join([base_url, year, month])
             response = requests.get(url, headers=headers)
-            res_dict = json.loads(response.text[offset:])
+            if response.status_code != 200:
+                print("Not successfull: ", response)
+                continue
+            try:
+                res_dict = json.loads(response.text[offset:])
+            except:
+                continue
             dailyBuckets = res_dict["payload"]["archiveIndex"]["dailyBuckets"]
             if not dailyBuckets:
                 update_data(res_dict)
@@ -157,7 +169,13 @@ def collect_archive(tag, output):
                 day = db["day"]
                 url = "/".join([base_url, year, month, day])
                 response = requests.get(url, headers=headers)
-                res_dict = json.loads(response.text[offset:])
+                if response.status_code != 200:
+                    print("Not successfull: ", response)
+                    continue
+                try:
+                    res_dict = json.loads(response.text[offset:])
+                except:
+                    continue
                 update_data(res_dict)
 
     toc = time.time()
