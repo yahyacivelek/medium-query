@@ -3,6 +3,10 @@ import json
 import time
 import click
 
+@click.group()
+def cli():
+    pass
+
 def chunks(lst, n):
     for i in range(0, len(lst), n):
         yield len(lst[i:i + n])
@@ -10,7 +14,7 @@ def chunks(lst, n):
 def generate_loop_index_list(start, stop, step=1):
   return list(chunks(range(start, stop), step))
 
-@click.command()
+@cli.command()
 @click.option('-q', '--query', required=True, help='query input')
 @click.option('-n', '--maxnum', default=9999, help='max. number of results. [10 - 9999)')
 @click.option('-o', '--output', default="results.json", help='Maximum number of results. Default: No restriction.')
@@ -28,7 +32,7 @@ def query_medium(query, maxnum, output):
       'x-obvious-cid': 'web',
       'sec-fetch-site': 'same-origin',
       'sec-fetch-mode': 'cors',
-      #'referer': 'https://medium.com/search/posts?q=python',
+     #'referer': 'https://medium.com/search/posts?q=python',
       'accept-encoding': 'gzip, deflate, br',
       'accept-language': 'en-GB,en-US;q=0.9,en;q=0.8,tr;q=0.7,ru;q=0.6',
       #'cookie': '__cfduid=db577dfbf15d24836cc86858cf5e94aa21570375758; _ga=GA1.2.70317468.1570375760; _parsely_visitor={%22id%22:%22pid=5dc8a4e4fa4bd8d0797b9a85e107731e%22%2C%22session_count%22:1%2C%22last_session_ts%22:1570375761408}; lightstep_guid/lite-web=328bc18254245108; lightstep_session_id=6af920180687e670; lightstep_guid/medium-web=a8b100c4c2399456; pr=1; tz=-120; __cfruid=12c2fd853ce5aa32449c49b23eb67afef66daf93-1578111157; optimizelyEndUserId=e570a6b31af3; uid=e570a6b31af3; sid=1:VqJiCkQTSP0K8CikBXdclsnxkbJDeq8nTaTrc2dJ8az3POzmGWgbp6qM3ti7skFr; xsrf=2HwkM3LR57ah; sz=762',
@@ -86,5 +90,88 @@ def query_medium(query, maxnum, output):
   with open(output, 'w') as fp:
     json.dump(final_data, fp)
 
+@cli.command()
+@click.option('-t', '--tag', required=True, help='tag string to search')
+#@click.option('-n', '--maxnum', default=9999, help='max. number of results. [10 - 9999)')
+@click.option('-o', '--output', default="archive.json", help='output file path')
+def collect_archive(tag, output):
+    headers = {
+        'authority': 'medium.com',
+        'pragma': 'no-cache',
+        'cache-control': 'no-cache',
+        'x-client-date': '1578149049243',
+        'origin': 'https://medium.com',
+        'x-xsrf-token': '2HwkM3LR57ah',
+        'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36',
+        'content-type': 'application/json',
+        'accept': 'application/json',
+        'x-obvious-cid': 'web',
+        'sec-fetch-site': 'same-origin',
+        'sec-fetch-mode': 'cors',
+        #'referer': 'https://medium.com/search/posts?q=python',
+        'accept-encoding': 'gzip, deflate, br',
+        'accept-language': 'en-GB,en-US;q=0.9,en;q=0.8,tr;q=0.7,ru;q=0.6',
+        #'cookie': '__cfduid=db577dfbf15d24836cc86858cf5e94aa21570375758; _ga=GA1.2.70317468.1570375760; _parsely_visitor={%22id%22:%22pid=5dc8a4e4fa4bd8d0797b9a85e107731e%22%2C%22session_count%22:1%2C%22last_session_ts%22:1570375761408}; lightstep_guid/lite-web=328bc18254245108; lightstep_session_id=6af920180687e670; lightstep_guid/medium-web=a8b100c4c2399456; pr=1; tz=-120; __cfruid=12c2fd853ce5aa32449c49b23eb67afef66daf93-1578111157; optimizelyEndUserId=e570a6b31af3; uid=e570a6b31af3; sid=1:VqJiCkQTSP0K8CikBXdclsnxkbJDeq8nTaTrc2dJ8az3POzmGWgbp6qM3ti7skFr; xsrf=2HwkM3LR57ah; sz=762',
+    }
+
+    offset = len(b'])}while(1);</x>')
+
+    def update_data(res):
+        references = res["payload"]["references"]
+        Users.update(references["User"])
+        Collections.update(references.get("Collection", {}))
+        Posts.update(references["Post"])
+        print("number of articles: ", len(Posts), end='\r')
+
+    base_url = 'https://medium.com/tag'
+    base_url = '/'.join([base_url, tag, 'archive'])
+    response = requests.get(base_url, headers=headers)
+    res_dict = json.loads(response.text[offset:])
+    yearlyBuckets = res_dict["payload"]["archiveIndex"]["yearlyBuckets"]
+
+    Posts = {}
+    Users = {}
+    Collections = {}
+
+    tic = time.time()
+    for yb in yearlyBuckets:
+        year = yb["year"]
+        url = "/".join([base_url, year])
+        print("url: ", url)
+        response = requests.get(url, headers=headers)
+        res_dict = json.loads(response.text[offset:])
+        monthlyBuckets = res_dict["payload"]["archiveIndex"]["monthlyBuckets"]
+        if not monthlyBuckets:
+            update_data(res_dict)
+            continue
+        for mb in monthlyBuckets:
+            month = mb["month"]
+            url = "/".join([base_url, year, month])
+            response = requests.get(url, headers=headers)
+            res_dict = json.loads(response.text[offset:])
+            dailyBuckets = res_dict["payload"]["archiveIndex"]["dailyBuckets"]
+            if not dailyBuckets:
+                update_data(res_dict)
+                continue
+            for db in dailyBuckets:
+                day = db["day"]
+                url = "/".join([base_url, year, month, day])
+                response = requests.get(url, headers=headers)
+                res_dict = json.loads(response.text[offset:])
+                update_data(res_dict)
+
+    toc = time.time()
+    print("it takes {:.1f} sec to crawl".format(toc - tic))
+    print("total number of articles crawled: ", len(Posts))
+
+    final_data = {
+        "Post": Posts,
+        "User": Users,
+        "Collection": Collections
+    }
+
+    with open(output, 'w') as fp:
+        json.dump(final_data, fp)
+
 if __name__ == '__main__':
-    query_medium()
+    cli()
