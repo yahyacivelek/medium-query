@@ -86,12 +86,14 @@ def query_medium(query, maxnum, output):
 def collect_archive(tag, output):
     offset = len(b'])}while(1);</x>')
 
-    def update_data(res):
+    def update_data(res, year='', month='', day=''):
         references = res["payload"]["references"]
         Users.update(references["User"])
         Collections.update(references.get("Collection", {}))
         Posts.update(references["Post"])
-        print("number of articles: ", len(Posts), end='\r')
+        #print("number of articles: ", len(Posts), end='\r')
+        print("year: {0}, month: {1}, day: {2}, articles: {3}"\
+              .format(year, month, day, len(Posts)), end = '\r')
 
     base_url = 'https://medium.com/tag'
     base_url = '/'.join([base_url, tag, 'archive'])
@@ -107,7 +109,6 @@ def collect_archive(tag, output):
     for yb in yearlyBuckets:
         year = yb["year"]
         url = "/".join([base_url, year])
-        print("url: ", url)
         response = requests.get(url, headers=headers)
         if response.status_code != 200:
           print("Not successfull: ", response)
@@ -118,7 +119,7 @@ def collect_archive(tag, output):
             continue
         monthlyBuckets = res_dict["payload"]["archiveIndex"]["monthlyBuckets"]
         if not monthlyBuckets:
-            update_data(res_dict)
+            update_data(res_dict, year)
             continue
         for mb in monthlyBuckets:
             month = mb["month"]
@@ -133,7 +134,7 @@ def collect_archive(tag, output):
                 continue
             dailyBuckets = res_dict["payload"]["archiveIndex"]["dailyBuckets"]
             if not dailyBuckets:
-                update_data(res_dict)
+                update_data(res_dict, year, month)
                 continue
             for db in dailyBuckets:
                 day = db["day"]
@@ -146,7 +147,7 @@ def collect_archive(tag, output):
                     res_dict = json.loads(response.text[offset:])
                 except:
                     continue
-                update_data(res_dict)
+                update_data(res_dict, year, month, day)
 
     toc = time.time()
     print("it takes {:.1f} sec to crawl".format(toc - tic))
