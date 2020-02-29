@@ -3,12 +3,65 @@ import requests
 import json
 import time
 import click
+from collections import Counter
 
 headers = {
     'x-xsrf-token': os.getenv('X_XSRF_TOKEN', 'any text!'),
     'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36',
     'accept': 'application/json'
 }
+
+keys_parent = [
+    "creatorId", "homeCollectionId", "title", "detectedLanguage", "latestVersion", "latestPublishedVersion",
+    "hasUnpublishedEdits", "latestRev", "createdAt", "updatedAt", "acceptedAt", "firstPublishedAt",
+    "latestPublishedAt", "uniqueSlug", "isEligibleForRevenue"
+]
+
+keys_virtuals = [
+    "imageCount", "readingTime", "subtitle", "recommends", "isBookmarked",
+    "socialRecommendsCount", "responsesCreatedCount", "totalClapCount", "sectionCount"
+]
+
+keys_others = [
+    "linkCount", "userId", "name", "username", "collectionName", "followerCount"
+]
+
+def is_keys_unique(*key_lists):
+    all_keys = []
+    for key_list in key_lists:
+        if not isinstance(key_list, list):
+            return (False, [])
+        all_keys += key_list
+
+    freq = Counter(all_keys)
+    common_keys = [k for k,v in dict(freq).items() if v > 1]
+
+    return (len(common_keys) == 0, common_keys)
+
+def get_required_fields(artical):
+    fields = {}
+    for key in keys_parent:
+        fields[key] = artical[key]
+
+    virtuals = artical["virtuals"]
+    for key in keys_virtuals:
+        fields[key] = virtuals[key]
+        
+    links = virtuals.get("links", None)
+    if links:
+        fields["linkCount"] = len(links["entries"])
+    else:
+        fields["linkCount"] = 0
+    #fields["userId"] = virtuals["userPostRelation"]["userId"]
+    tags = virtuals.get("tags", None)
+    if tags:
+        tagList = [x["name"] for x in tags]
+    else:
+        tagList = []
+
+    fields["tags"] = tagList
+
+    return fields
 
 @click.group()
 def cli():
@@ -52,8 +105,10 @@ def query_medium(query, maxnum, output):
       print("number of articles: ", article_num, end='\r')
       references = res_dict["payload"].get("references", None)
       if references:
-          Users.update(references["User"])
-          Collections.update(references["Collection"])
+          t = references.get("User", None)
+          if t: Users.update(t)
+          t = references.get("Collection", None)
+          if t: Collections.update(t)
       paging = res_dict["payload"].get("paging", None)
       if paging:
           next_page = paging.get("next", None)
@@ -73,7 +128,7 @@ def query_medium(query, maxnum, output):
       "collections": Collections
   }
   toc = time.time()
-  print("it takes {:.1f} sec to crawl".format(toc - tic))
+  print("it took {:.1f} sec to crawl".format(toc - tic))
   print("total number of articles crawled: ", article_num)
 
   with open(output, 'w') as fp:
@@ -81,16 +136,26 @@ def query_medium(query, maxnum, output):
 
 @cli.command()
 @click.option('-t', '--tag', required=True, help='tag string to search')
+@click.option('-a', '--all_', default=False, help='acquire all the data')
 #@click.option('-n', '--maxnum', default=9999, help='max. number of results. [10 - 9999)')
 @click.option('-o', '--output', default="archive.json", help='output file path')
-def collect_archive(tag, output):
+def collect_archive(tag, output, all_):
     offset = len(b'])}while(1);</x>')
 
-    def update_data(res, year='', month='', day=''):
+    def update_data(res, all_, year='', month='', day=''):
         references = res["payload"]["references"]
-        Users.update(references["User"])
-        Collections.update(references.get("Collection", {}))
-        Posts.update(references["Post"])
+        users = references.get("User", None)
+        collection = references.get("Collection", None)
+        post = references.get("Post", None)
+
+        if not all_:
+            #print(post)
+            k = list(post.keys())[0]
+            post_ = get_required_fields(post.get(k, None))
+            post = {k: post_}
+        if users: Users.update(users)
+        if collection: Collections.update(collection)
+        if post: Posts.update(post)
         #print("number of articles: ", len(Posts), end='\r')
         print("year: {0}, month: {1}, day: {2}, articles: {3}"\
               .format(year, month, day, len(Posts)), end = '\r')
@@ -119,7 +184,7 @@ def collect_archive(tag, output):
             continue
         monthlyBuckets = res_dict["payload"]["archiveIndex"]["monthlyBuckets"]
         if not monthlyBuckets:
-            update_data(res_dict, year)
+            update_data(res_dict, all_, year)
             continue
         for mb in monthlyBuckets:
             month = mb["month"]
@@ -134,7 +199,7 @@ def collect_archive(tag, output):
                 continue
             dailyBuckets = res_dict["payload"]["archiveIndex"]["dailyBuckets"]
             if not dailyBuckets:
-                update_data(res_dict, year, month)
+                update_data(res_dict, all_, year, month)
                 continue
             for db in dailyBuckets:
                 day = db["day"]
@@ -147,7 +212,7 @@ def collect_archive(tag, output):
                     res_dict = json.loads(response.text[offset:])
                 except:
                     continue
-                update_data(res_dict, year, month, day)
+                update_data(res_dict, all_, year, month, day)
 
     toc = time.time()
     print("it takes {:.1f} sec to crawl".format(toc - tic))
