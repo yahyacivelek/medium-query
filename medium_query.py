@@ -138,42 +138,13 @@ def query_medium(query, maxnum, output):
     json.dump(final_data, fp)
 
 @cli.command()
-@click.option('-t', '--tag', required=True, help='tag string to search')
+@click.option('-t', '--tag', default="", help='tag string to search')
+@click.option('-f', '--tagfile', default="tagfile.txt", help='file path containing tags to acquire')
 @click.option('-a', '--all_', default=False, help='acquire all the data')
 #@click.option('-n', '--maxnum', default=9999, help='max. number of results. [10 - 9999)')
 @click.option('-o', '--output', default="", help='output file path')
 @click.option('-n', '--nsave', default=1000, help='save interval')
-def collect_archive(tag, output, all_, nsave):
-    if not output:
-        output = os.getcwd()
-    if not os.path.exists(os.path.dirname(output)):
-        print("Output directory doesn't exist!")
-        return
-
-    Posts = {}
-    Users = {}
-    Collections = {}
-    currentDateListforUrl = None
-
-    outputPath = os.path.join(output, tag + '.json')
-    if os.path.isfile(outputPath):
-        with open(outputPath, "r") as fp:
-            temp = json.load(fp)
-            Users = temp.get("User", {})
-            Collections = temp.get("Collection", {})
-            Posts = temp.get("Post", {})
-            latests = [v['latestAcquiredDate'] for k,v in Posts.items()]
-            res = (None, 0)
-            for t in latests:
-                m = t[1] if t[1] else 1
-                d = t[2] if t[2] else 1
-                resNew = (t, 365 * int(t[0]) + 30 * int(m) + int(d))
-                if resNew[1] > res[1]:
-                    res = resNew
-            currentDateListforUrl = res[0]
-
-    offset = len(b'])}while(1);</x>')
-
+def collect_archive(tag, tagfile, output, all_, nsave):
     def update_data(res, all_, year, month='', day=''):
         references = res["payload"]["references"]
         users = references.get("User", None)
@@ -211,70 +182,96 @@ def collect_archive(tag, output, all_, nsave):
             with open(outputPath, 'w') as fp:
                 json.dump(final_data, fp)
 
-    base_url = 'https://medium.com/tag'
-    base_url = '/'.join([base_url, tag, 'archive'])
-    
-    if currentDateListforUrl:
-        print("currentDateListforUrl: ", currentDateListforUrl)
-        for i in list(range(3))[::-1]:
-            fine = '/'.join(currentDateListforUrl[:i+1])
-            url = '/'.join([base_url, fine])
-            print("decided base_url:", url)
-            response = requests.get(url, headers=headers)
-            if response.status_code == 200:
-                print("status: ", response.status_code)
-                break
+    tags = []
+    if os.path.isfile(tagfile):
+        print("will use tagfile...")
+        with open(tagfile, "r") as fp:
+            tags = fp.readlines()
+            print("tags: ", tags)
     else:
-        response = requests.get(base_url, headers=headers)
-    res_dict = json.loads(response.text[offset:])
-    yearlyBuckets = res_dict["payload"]["archiveIndex"]["yearlyBuckets"]
-    timeBucket = res_dict["payload"]["archiveIndex"]["timeBucket"]
+        tags = [tag]
 
-    tic = time.time()
-    for yb in yearlyBuckets:
-        if timeBucket['year']:
-            if yb["year"] < timeBucket['year']:
-                continue
-        year = yb["year"]
-        url = "/".join([base_url, year])
-        response = requests.get(url, headers=headers)
-        if response.status_code != 200:
-          print("Error: ", response, ", url: ", url)
-          continue
-        try:
-            res_dict = json.loads(response.text[offset:])
-        except:
-            print("error parsing res_dict!")
-            continue
-        monthlyBuckets = res_dict["payload"]["archiveIndex"]["monthlyBuckets"]
-        if not monthlyBuckets:
-            update_data(res_dict, all_, year)
-            print("No monthlyBuckets")
-            continue
-        for mb in monthlyBuckets:
-            if timeBucket['month']:
-                if mb["month"] < timeBucket['month']:
+    if not output:
+        output = os.getcwd()
+
+    if not os.path.exists(os.path.dirname(output)):
+        print("Output directory doesn't exist!")
+        return
+
+    for tag in tags:
+        print("TAG: ", tag)
+
+        Posts = {}
+        Users = {}
+        Collections = {}
+        currentDateListforUrl = None
+        saveIndex = 0
+
+        outputPath = os.path.join(output, tag + '.json')
+        if os.path.isfile(outputPath):
+            with open(outputPath, "r") as fp:
+                temp = json.load(fp)
+                Users = temp.get("User", {})
+                Collections = temp.get("Collection", {})
+                Posts = temp.get("Post", {})
+                latests = [v['latestAcquiredDate'] for k,v in Posts.items()]
+                res = (None, 0)
+                for t in latests:
+                    m = t[1] if t[1] else 1
+                    d = t[2] if t[2] else 1
+                    resNew = (t, 365 * int(t[0]) + 30 * int(m) + int(d))
+                    if resNew[1] > res[1]:
+                        res = resNew
+                currentDateListforUrl = res[0]
+
+        offset = len(b'])}while(1);</x>')
+
+        base_url = 'https://medium.com/tag'
+        base_url = '/'.join([base_url, tag, 'archive'])
+        
+        if currentDateListforUrl:
+            print("currentDateListforUrl: ", currentDateListforUrl)
+            for i in list(range(3))[::-1]:
+                fine = '/'.join(currentDateListforUrl[:i+1])
+                url = '/'.join([base_url, fine])
+                print("decided base_url:", url)
+                response = requests.get(url, headers=headers)
+                if response.status_code == 200:
+                    print("status: ", response.status_code)
+                    break
+        else:
+            response = requests.get(base_url, headers=headers)
+        res_dict = json.loads(response.text[offset:])
+        yearlyBuckets = res_dict["payload"]["archiveIndex"]["yearlyBuckets"]
+        timeBucket = res_dict["payload"]["archiveIndex"]["timeBucket"]
+
+        tic = time.time()
+        for yb in yearlyBuckets:
+            if timeBucket['year']:
+                if yb["year"] < timeBucket['year']:
                     continue
-            month = mb["month"]
-            url = "/".join([base_url, year, month])
+            year = yb["year"]
+            url = "/".join([base_url, year])
             response = requests.get(url, headers=headers)
             if response.status_code != 200:
-                print("Not successfull: ", response)
+                print("Error: ", response, ", url: ", url)
                 continue
             try:
                 res_dict = json.loads(response.text[offset:])
             except:
+                print("error parsing res_dict!")
                 continue
-            dailyBuckets = res_dict["payload"]["archiveIndex"]["dailyBuckets"]
-            if not dailyBuckets:
-                update_data(res_dict, all_, year, month)
+            monthlyBuckets = res_dict["payload"]["archiveIndex"]["monthlyBuckets"]
+            if not monthlyBuckets:
+                update_data(res_dict, all_, year)
+                print("No monthlyBuckets")
                 continue
-            for db in dailyBuckets:
-                if timeBucket['day']:
-                    if db["day"] < timeBucket['day']:
+            for mb in monthlyBuckets:
+                if timeBucket['month']:
+                    if mb["month"] < timeBucket['month']:
                         continue
-                day = db["day"]
-                url = "/".join([base_url, year, month, day])
+                month = mb["month"]
+                url = "/".join([base_url, year, month])
                 response = requests.get(url, headers=headers)
                 if response.status_code != 200:
                     print("Not successfull: ", response)
@@ -283,20 +280,38 @@ def collect_archive(tag, output, all_, nsave):
                     res_dict = json.loads(response.text[offset:])
                 except:
                     continue
-                update_data(res_dict, all_, year, month, day)
+                dailyBuckets = res_dict["payload"]["archiveIndex"]["dailyBuckets"]
+                if not dailyBuckets:
+                    update_data(res_dict, all_, year, month)
+                    continue
+                for db in dailyBuckets:
+                    if timeBucket['day']:
+                        if db["day"] < timeBucket['day']:
+                            continue
+                    day = db["day"]
+                    url = "/".join([base_url, year, month, day])
+                    response = requests.get(url, headers=headers)
+                    if response.status_code != 200:
+                        print("Not successfull: ", response)
+                        continue
+                    try:
+                        res_dict = json.loads(response.text[offset:])
+                    except:
+                        continue
+                    update_data(res_dict, all_, year, month, day)
 
-    toc = time.time()
-    print("it takes {:.1f} sec to crawl".format(toc - tic))
-    print("total number of articles crawled: ", len(Posts))
+        toc = time.time()
+        print("it takes {:.1f} sec to crawl".format(toc - tic))
+        print("total number of articles crawled: ", len(Posts))
 
-    final_data = {
-        "Post": Posts,
-        "User": Users,
-        "Collection": Collections
-    }
+        final_data = {
+            "Post": Posts,
+            "User": Users,
+            "Collection": Collections
+        }
 
-    with open(outputPath, 'w') as fp:
-        json.dump(final_data, fp)
+        with open(outputPath, 'w') as fp:
+            json.dump(final_data, fp)
 
 if __name__ == '__main__':
     cli()
