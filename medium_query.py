@@ -154,9 +154,10 @@ def collect_archive(tag, tagfile, output, all_, nsave):
         if post:
             if not all_:
                 #print(post)
-                k = list(post.keys())[0]
-                post_ = get_required_fields(post.get(k, None))
-                post = {k: post_}
+                newPost = {}
+                for k,v in post.items():
+                    newPost.update({k: get_required_fields(v)})
+                post = newPost
 
             for k, _ in post.items():
                 post[k].update({'latestAcquiredDate': (year, month, day)})
@@ -187,6 +188,7 @@ def collect_archive(tag, tagfile, output, all_, nsave):
         print("will use tagfile...")
         with open(tagfile, "r") as fp:
             tags = fp.readlines()
+            tags = [tag.strip() for tag in tags]
             print("tags: ", tags)
     else:
         tags = [tag]
@@ -199,7 +201,9 @@ def collect_archive(tag, tagfile, output, all_, nsave):
         return
 
     for tag in tags:
+        print("\n###################")
         print("TAG: ", tag)
+        print("###################\n")
 
         Posts = {}
         Users = {}
@@ -228,6 +232,9 @@ def collect_archive(tag, tagfile, output, all_, nsave):
 
         base_url = 'https://medium.com/tag'
         base_url = '/'.join([base_url, tag, 'archive'])
+
+        buckets = "yearlyBuckets"
+        bucketList = ["yearlyBuckets", "monthlyBuckets", "dailyBuckets"]
         
         if currentDateListforUrl:
             print("currentDateListforUrl: ", currentDateListforUrl)
@@ -236,20 +243,19 @@ def collect_archive(tag, tagfile, output, all_, nsave):
                 url = '/'.join([base_url, fine])
                 print("decided base_url:", url)
                 response = requests.get(url, headers=headers)
+                buckets = bucketList[i]
                 if response.status_code == 200:
                     print("status: ", response.status_code)
                     break
         else:
             response = requests.get(base_url, headers=headers)
         res_dict = json.loads(response.text[offset:])
-        yearlyBuckets = res_dict["payload"]["archiveIndex"]["yearlyBuckets"]
-        timeBucket = res_dict["payload"]["archiveIndex"]["timeBucket"]
+        yearlyBuckets = res_dict["payload"]["archiveIndex"][buckets]
 
         tic = time.time()
         for yb in yearlyBuckets:
-            if timeBucket['year']:
-                if yb["year"] < timeBucket['year']:
-                    continue
+            if not yb["hasStories"]:
+                continue
             year = yb["year"]
             url = "/".join([base_url, year])
             response = requests.get(url, headers=headers)
@@ -264,12 +270,10 @@ def collect_archive(tag, tagfile, output, all_, nsave):
             monthlyBuckets = res_dict["payload"]["archiveIndex"]["monthlyBuckets"]
             if not monthlyBuckets:
                 update_data(res_dict, all_, year)
-                print("No monthlyBuckets")
                 continue
             for mb in monthlyBuckets:
-                if timeBucket['month']:
-                    if mb["month"] < timeBucket['month']:
-                        continue
+                if not mb["hasStories"]:
+                    continue
                 month = mb["month"]
                 url = "/".join([base_url, year, month])
                 response = requests.get(url, headers=headers)
@@ -279,15 +283,15 @@ def collect_archive(tag, tagfile, output, all_, nsave):
                 try:
                     res_dict = json.loads(response.text[offset:])
                 except:
+                    print("error parsing res_dict!")
                     continue
                 dailyBuckets = res_dict["payload"]["archiveIndex"]["dailyBuckets"]
                 if not dailyBuckets:
                     update_data(res_dict, all_, year, month)
                     continue
                 for db in dailyBuckets:
-                    if timeBucket['day']:
-                        if db["day"] < timeBucket['day']:
-                            continue
+                    if not db["hasStories"]:
+                        continue
                     day = db["day"]
                     url = "/".join([base_url, year, month, day])
                     response = requests.get(url, headers=headers)
@@ -297,6 +301,7 @@ def collect_archive(tag, tagfile, output, all_, nsave):
                     try:
                         res_dict = json.loads(response.text[offset:])
                     except:
+                        print("error parsing res_dict!")
                         continue
                     update_data(res_dict, all_, year, month, day)
 
